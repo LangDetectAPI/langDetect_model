@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 __all__ = ['preprocess_data']
 
 
-def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_split=0.2):
+def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_split=0.2, nrows=10_000):
     """Prétraitement des données
 
     Args:
@@ -16,10 +16,13 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
         macrolanguages_path (str): Chemin du fichier contenant les langues
         labels (list): Liste des langues à garder
         test_split (float): Proportion des données à garder pour le test
+        nrows (int): Nombre de lignes à garder pour chaque label
 
     Returns:
         train_data (pd.DataFrame): Données d'entraînement
         test_data (pd.DataFrame): Données de test
+
+
 
         """
 
@@ -71,10 +74,10 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
     label_counts = data['label'].value_counts()
 
     # Identifier les labels avec plus de n lignes
-    nrows = 100_000
+
     labels_over_nrows = label_counts[label_counts > nrows].index.tolist()
 
-    print(f"labels_over_nrows: {labels_over_nrows}")
+    print(f"labels over {nrows} rows: {labels_over_nrows}")
 
     #
     # Étape 2: Filtrer les lignes avec moins de 4 tokens uniquement pour ces labels
@@ -109,14 +112,14 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
     # Étape 4: Limiter à 100000 lignes pour les labels filtrés
     #
 
-    print("Limiting to n rows for each label...")
+    print(f"Limiting to {nrows} rows for each label...")
 
     # Initialiser un DataFrame vide pour le résultat final limité
     data_final = pd.DataFrame()
 
     # Limiter à 100000 lignes pour chaque label concerné
     for label in labels_over_nrows:
-        df_temp = df_final[df_final['label'] == label].sample(n=100000, random_state=42)
+        df_temp = df_final[df_final['label'] == label].sample(n=nrows, random_state=42)
         data_final = pd.concat([data_final, df_temp], axis=0)
 
     # Ajouter les lignes des labels non concernés par la limitation
@@ -134,24 +137,42 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
         test_size=test_split,
         stratify=data_final['label'].values,
     )
+
+    # reindexing
+    train_data.reset_index(drop=True, inplace=True)
+    test_data.reset_index(drop=True, inplace=True)
+
     print(f"Preprocessing end...")
 
     # Sauvegarder les résultats dans des fichiers
     print(f"Sauvegarde des résultats dans '{data_dir}*_data.pkl'...")
-    train_data.to_pickle(os.path.join(data_dir, 'train_data.pkl'))
-    test_data.to_pickle(os.path.join(data_dir, 'test_data.pkl'))
+    train_data.to_pickle(path=os.path.join(data_dir, 'train_data.tar.bz2'))
+    test_data.to_pickle(os.path.join(data_dir, 'test_data.tar.bz2'))
 
     return train_data, test_data
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess data")
-    parser.add_argument('--data_dir', type=str, default='../data/', help="Répertoire de sauvegarde des données")
-    parser.add_argument('--corpus_path', type=str, default='../data/sentences.tar.bz2',
+    parser.add_argument('--data_dir', type=str
+                        , default='../data/'
+                        , help="Répertoire de sauvegarde des données")
+    parser.add_argument('--corpus_path'
+                        , type=str
+                        , default='../data/sentences.tar.bz2',
                         help="Chemin du fichier contenant les données")
-    parser.add_argument('--macrolanguages_path', type=str, default='../data/iso-639-3-macrolanguages.tab',
-                        help="Chemin du fichier contenant les langues")
-    parser.add_argument('--test_split', type=float, default=0.2, help="Proportion des données à garder pour le test")
+    parser.add_argument('--macrolanguages_path'
+                        , type=str
+                        , default='../data/iso-639-3-macrolanguages.tab'
+                        , help="Chemin du fichier contenant les langues")
+    parser.add_argument('--test_split'
+                        , type=float
+                        , default=0.2
+                        , help="Proportion des données à garder pour le test")
+    parser.add_argument('--nrows'
+                        , type=int
+                        , default=10_000
+                        , help="Nombre de lignes à garder pour chaque label")
 
     args = parser.parse_args()
 
@@ -163,6 +184,8 @@ if __name__ == "__main__":
     # Chemin des fichiers
     corpus_path = args.corpus_path
     macrolanguages_path = args.macrolanguages_path
+
+    nrows = args.nrows
 
     # Création du répertoire des données s'il n'existe pas
     os.makedirs(data_dir, exist_ok=True)
@@ -177,4 +200,9 @@ if __name__ == "__main__":
               'lat': 'Latin',
               'vie': 'Vietnamese', 'tha': 'Thai'}
 
-    train_data, test_data = preprocess_data(data_dir, corpus_path, macrolanguages_path, labels)
+    train_data, test_data = preprocess_data(data_dir=data_dir
+                                            , corpus_path=corpus_path
+                                            , macrolanguages_path=macrolanguages_path
+                                            , labels=labels
+                                            , test_split=args.test_split
+                                            , nrows=nrows)
