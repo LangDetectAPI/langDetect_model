@@ -138,9 +138,14 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
         stratify=data_final['label'].values,
     )
 
+    val_split = 0.5
+    valid_data = test_data.sample(frac=val_split)
+    test_data.drop(valid_data.index, inplace=True)
+
     # reindexing
     train_data.reset_index(drop=True, inplace=True)
     test_data.reset_index(drop=True, inplace=True)
+    valid_data.reset_index(drop=True, inplace=True)
 
     print(f"Preprocessing end...")
 
@@ -148,6 +153,7 @@ def preprocess_data(data_dir, corpus_path, macrolanguages_path, labels, test_spl
     print(f"Sauvegarde des résultats dans '{data_dir}*_data.pkl'...")
     train_data.to_pickle(path=os.path.join(data_dir, 'train_data.tar.bz2'))
     test_data.to_pickle(os.path.join(data_dir, 'test_data.tar.bz2'))
+    valid_data.to_pickle(os.path.join(data_dir, 'valid_data.tar.bz2'))
 
     return train_data, test_data
 

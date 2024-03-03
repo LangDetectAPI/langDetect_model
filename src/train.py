@@ -1,4 +1,6 @@
 import os
+
+import numpy as np
 # import joblib
 import pandas as pd
 # import numpy as np
@@ -15,7 +17,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 
 # @memory.cache
-def load_data(data_path):
+def load_data(data_path: str) -> pd.DataFrame:
     """
     Charge et prétraite les données.
 
@@ -30,28 +32,29 @@ def load_data(data_path):
     return df
 
 
-def build_label_encoder(labelset):
+def build_label_encoder(vocabulary: any) -> StringLookup:
     """
     Crée une couche StringLookup pour encoder les étiquettes.
 
     Args:
-        labelset (list): Liste des étiquettes uniques.
+        vocabulary (list): Liste des étiquettes uniques.
 
     Returns:
         tf.keras.layers.StringLookup: Couche StringLookup adaptée aux étiquettes.
+
     """
-    tf_labels = ragged.constant(labelset)
+    tf_labels = ragged.constant(np.sort(vocabulary))
     lookup = StringLookup(output_mode="multi_hot")
     lookup.adapt(tf_labels)
     return lookup
 
 
-def build_text_vectorizer(dataset, ngrams=(1, 2), max_tokens=1000000):
+def build_text_vectorizer(dataset: pd.DataFrame, ngrams=(1, 2), max_tokens: int = 1_000_000) -> TextVectorization:
     """
     Crée et adapte une couche TextVectorization.
 
     Args:
-        texts (pd.Series): Série contenant les textes à vectoriser.
+        dataset (pd.Dataframe): contenant les textes à vectoriser.
         ngrams (tuple, optional): Taille des n-grammes à utiliser. Par défaut, (1, 2).
         max_tokens (int, optional): Nombre maximum de tokens à conserver. Par défaut, 1000000.
 
@@ -66,7 +69,7 @@ def build_text_vectorizer(dataset, ngrams=(1, 2), max_tokens=1000000):
     return vectorize_layer
 
 
-def make_dataset(dataset, is_train=True, batch_size=2000, lookup=None):
+def make_dataset(dataset: pd.DataFrame, is_train=True, batch_size=2000, lookup=None) -> Dataset:
     """
     Crée un dataset TensorFlow.
 
@@ -83,6 +86,7 @@ def make_dataset(dataset, is_train=True, batch_size=2000, lookup=None):
     labels_binarized = lookup(tf_labels) if lookup else tf_labels
     tf_contents = Dataset.from_tensor_slices((dataset['content'].values, labels_binarized))
 
+    # Mélanger les données si c'est pour l'entraînement
     if is_train:
         tf_contents = tf_contents.shuffle(batch_size * 10)
     return tf_contents.batch(batch_size)
@@ -101,18 +105,19 @@ def make_model(name="language_model", output_shape=22, filepath='../models/best_
         tuple: Tuple contenant le modèle, le callback EarlyStopping et le callback ModelCheckpoint.
     """
 
-    model = Sequential(name=name, layers=[
+    model_loc = Sequential(name=name, layers=[
         Dense(512, activation="relu"),
         Dense(256, activation="relu"),
         Dense(output_shape, activation="sigmoid")
     ])
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model_loc.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    early_stopping = EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto', restore_best_weights=True)
-    model_checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_loss', save_best_only=True,
-                                       verbose=1)
+    early_stopping_loc = EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto',
+                                       restore_best_weights=True)
+    model_checkpoint_loc = ModelCheckpoint(filepath=filepath, monitor='val_loss', save_best_only=True,
+                                           verbose=1)
 
-    return model, early_stopping, model_checkpoint
+    return model_loc, early_stopping_loc, model_checkpoint_loc
 
 
 if __name__ == "__main__":
@@ -122,19 +127,14 @@ if __name__ == "__main__":
     # Utilisation de la fonction mise en cache pour charger et prétraiter les données
     print("Loading and preprocessing data...")
     train_df = load_data(os.path.join(data_dir, 'train_data.tar.bz2'))
-    test_df = load_data(os.path.join(data_dir, 'test_data.tar.bz2'))
-
-    val_split = 0.5
-    val_df = test_df.sample(frac=val_split)
-    test_df.drop(val_df.index, inplace=True)
+    val_df = load_data(os.path.join(data_dir, 'valid_data.tar.bz2'))
 
     print("Data loaded.")
     print(f"Number of rows in training set: {len(train_df)}")
     print(f"Number of rows in validation set: {len(val_df)}")
-    print(f"Number of rows in test set: {len(test_df)}")
 
     labels = train_df['label'].unique()
-    print(f"Number of labels: {len(labels)}")
+    print(f"Number of labels: {labels.shape}")
 
     label_encoder = build_label_encoder(labels)
 
