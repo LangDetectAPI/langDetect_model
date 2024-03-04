@@ -6,7 +6,7 @@ import pandas as pd
 # import numpy as np
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import TextVectorization, StringLookup, Dense
-from tensorflow import ragged
+from tensorflow import keras, ragged, strings
 from tensorflow.data import AUTOTUNE, Dataset
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -49,21 +49,14 @@ def build_label_encoder(vocabulary: any) -> StringLookup:
     return lookup
 
 
-def build_text_vectorizer(dataset: pd.DataFrame, ngrams=(1, 2), max_tokens: int = 1_000_000) -> TextVectorization:
+def build_text_vectorizer(dataset: pd.DataFrame, max_tokens: int = 1_000_000) -> TextVectorization:
     """
     Crée et adapte une couche TextVectorization.
-
-    Args:
-        dataset (pd.Dataframe): contenant les textes à vectoriser.
-        ngrams (tuple, optional): Taille des n-grammes à utiliser. Par défaut, (1, 2).
-        max_tokens (int, optional): Nombre maximum de tokens à conserver. Par défaut, 1000000.
-
-    Returns:
-        tf.keras.layers.TextVectorization: Couche TextVectorization adaptée aux textes.
     """
     vectorize_layer = TextVectorization(
-        max_tokens=max_tokens, ngrams=ngrams, output_mode="tf_idf",
-        standardize='lower', split='character'
+        max_tokens=max_tokens,
+        ngrams=2, output_mode="tf_idf",
+        standardize=standardize_text, split='character'
     )
     vectorize_layer.adapt(dataset.map(lambda text, label: text))
     return vectorize_layer
@@ -120,6 +113,15 @@ def make_model(name="language_model", output_shape=22, filepath='../models/best_
     return model_loc, early_stopping_loc, model_checkpoint_loc
 
 
+@keras.utils.register_keras_serializable()
+def standardize_text(input_text: str) -> str:
+    """
+    Standardise un texte donné.
+
+    """
+    return strings.regex_replace(input_text, '[\n\t ]+', '_', replace_global=True)
+
+
 if __name__ == "__main__":
     data_dir = '../data/'
     model_dir = '../models/'
@@ -160,7 +162,7 @@ if __name__ == "__main__":
     ).prefetch(AUTOTUNE)
 
     print("Building model...")
-    model_filepath = model_dir + 'best_model_{epoch}.keras'
+    model_filepath = model_dir + 'best_model.keras'
     out_shape = label_encoder.vocabulary_size()
     epochs = 10
 
@@ -183,3 +185,5 @@ if __name__ == "__main__":
     print("Saving model...")
     model_final.save(model_dir + 'shallow_model.keras')
     # model_final.save_weights(model_dir + 'shallow_model_weights')
+
+    label_encoder.save_assets(model_dir)
