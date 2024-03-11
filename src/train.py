@@ -4,12 +4,12 @@ import numpy as np
 # import joblib
 import pandas as pd
 # import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import TextVectorization, StringLookup, Dense
-from tensorflow import keras, ragged, strings
+from tensorflow.keras.models import Sequential,load_model
+from tensorflow.keras.layers import TextVectorization, StringLookup, Dense, Dropout
+from tensorflow import keras, ragged
 from tensorflow.data import AUTOTUNE, Dataset
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-
+from tensorflow.keras.regularizers import l2
 
 # Configuration du cache pour joblib
 # cachedir = '/tmp/cache'  # Définissez le répertoire pour le cache
@@ -55,14 +55,14 @@ def build_text_vectorizer(dataset: pd.DataFrame, max_tokens: int = 1_000_000) ->
     """
     vectorize_layer = TextVectorization(
         max_tokens=max_tokens,
-        ngrams=2, output_mode="tf_idf",
-        standardize=standardize_text, split='character'
+        ngrams=None, output_mode="tf_idf",
+        standardize=None, split='whitespace'
     )
-    vectorize_layer.adapt(dataset.map(lambda text, label: text))
+    vectorize_layer.adapt( dataset.map(lambda text, label: text) )
     return vectorize_layer
 
 
-def make_dataset(dataset: pd.DataFrame, is_train=True, batch_size=2000, lookup=None) -> Dataset:
+def make_dataset(dataset, is_train=True, batch_size=1000, lookup=None):
     """
     Crée un dataset TensorFlow.
 
@@ -75,17 +75,17 @@ def make_dataset(dataset: pd.DataFrame, is_train=True, batch_size=2000, lookup=N
     Returns:
         tf.data.Dataset: Dataset TensorFlow contenant les données et les étiquettes.
     """
+
     tf_labels = ragged.constant(dataset['label'].apply(lambda x: [x]).values)
     labels_binarized = lookup(tf_labels) if lookup else tf_labels
     tf_contents = Dataset.from_tensor_slices((dataset['content'].values, labels_binarized))
 
-    # Mélanger les données si c'est pour l'entraînement
     if is_train:
-        tf_contents = tf_contents.shuffle(batch_size * 10)
+        tf_contents = tf_contents.shuffle(batch_size * 100)
     return tf_contents.batch(batch_size)
 
 
-def make_model(name="language_model", output_shape=22, filepath='../models/best_model_{epoch}.keras'):
+def make_model(name="language_model", output_shape=22, filepath='../models/best_model_{epoch}.h5'):
     """
     Entraîne un modèle de classification de langues.
 
@@ -98,28 +98,42 @@ def make_model(name="language_model", output_shape=22, filepath='../models/best_
         tuple: Tuple contenant le modèle, le callback EarlyStopping et le callback ModelCheckpoint.
     """
 
-    model_loc = Sequential(name=name, layers=[
-        Dense(512, activation="relu"),
-        Dense(256, activation="relu"),
-        Dense(output_shape, activation="sigmoid")
+    model = Sequential(name=name, layers=[
+        Dense(512, activation="relu", kernel_regularizer=l2(0.001)),
+        Dropout(0.5),
+        Dense(256, activation="relu", kernel_regularizer=l2(0.001)),
+        Dropout(0.5),
+        Dense(output_shape, activation="softmax")
     ])
-    model_loc.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=["Accuracy", "Recall", "Precision", "AUC"])
 
-    early_stopping_loc = EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto',
-                                       restore_best_weights=True)
-    model_checkpoint_loc = ModelCheckpoint(filepath=filepath, monitor='val_loss', save_best_only=True,
-                                           verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto', restore_best_weights=True)
+    model_checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_loss', save_best_only=True,
+                                       verbose=1)
 
-    return model_loc, early_stopping_loc, model_checkpoint_loc
+    return model, early_stopping, model_checkpoint
 
 
-@keras.utils.register_keras_serializable()
-def standardize_text(input_text: str) -> str:
-    """
-    Standardise un texte donné.
+def char_tokenizer(input_text: str) -> str:
 
-    """
-    return strings.regex_replace(input_text, '[\n\t ]+', '_', replace_global=True)
+    # Supprime tous les chiffres du texte
+    cleaned_text = re.sub(r'[\t\n\d ]+', '', input_text.lower())
+
+    # Initialise la chaîne de résultat
+    tokenized_text = ''
+
+    # Parcourt chaque caractère du texte nettoyé
+    for i, char in enumerate(cleaned_text):
+        
+        # Ajoute l'espace avant le caractère si nécessaire
+        if i>0 and ( tokenized_text[-1] in string.punctuation ) or ( char not in string.punctuation ):
+            tokenized_text += ' '
+            #print(f"{tokenized_text[-1]}+{char}" )
+
+        # Ajoute le caractère actuel
+        tokenized_text += char
+
+    return tokenized_text
 
 
 if __name__ == "__main__":
@@ -134,6 +148,9 @@ if __name__ == "__main__":
     print("Data loaded.")
     print(f"Number of rows in training set: {len(train_df)}")
     print(f"Number of rows in validation set: {len(val_df)}")
+
+    train_df['content'] = train_df['content'].apply(lambda x : char_tokenizer(x))
+    val_df['content'] = val_df['content'].apply(lambda x : char_tokenizer(x))
 
     labels = train_df['label'].unique()
     print(f"Number of labels: {labels.shape}")
@@ -162,13 +179,13 @@ if __name__ == "__main__":
     ).prefetch(AUTOTUNE)
 
     print("Building model...")
-    model_filepath = model_dir + 'best_model.keras'
+    best_model_filepath = model_dir + 'best_model'
     out_shape = label_encoder.vocabulary_size()
-    epochs = 10
+    epochs = 20
 
-    model, early_stopping, model_checkpoint = make_model(name="language_model"
+    model, early_stopping, model_checkpoint = make_model(name="shallow_model"
                                                          , output_shape=out_shape
-                                                         , filepath=model_filepath
+                                                         , filepath=best_model_filepath
                                                          )
 
     history = model.fit(train_dataset
@@ -177,13 +194,42 @@ if __name__ == "__main__":
                         , callbacks=[early_stopping, model_checkpoint]
                         )
 
-    model_final = Sequential(name="shallow_nlp_model", layers=[
+    model_final = Sequential(name="langDetect_shallow_model", layers=[
         text_vectorizer,
         model
     ])
 
+    model_final.build()
+
     print("Saving model...")
-    model_final.save(model_dir + 'shallow_model.keras')
+    model_final.save(model_dir + 'shallow_model')
     # model_final.save_weights(model_dir + 'shallow_model_weights')
 
     label_encoder.save_assets(model_dir)
+
+    text_vectorizer.save_assets(model_dir +'/assets/text')
+    label_encoder.save_assets(model_dir + '/assets/labels')
+
+    hist_df = pd.DataFrame(history.history)
+
+    hist_df.to_pickle('hist_df.pckl')
+
+
+    print("loading best model...")
+    
+    best_model = load_model(best_model_filepath)
+
+    best_model_final = Sequential(name="langDetect_shallow_model", layers=[
+        text_vectorizer,
+        best_model
+    ])
+    best_model_final.build()
+    print("Saving ...")
+
+    best_model_final.save(model_dir + 'best_shallow_model')
+
+    print("Saving done")
+
+
+
+    print("Training done.")
