@@ -1,8 +1,9 @@
 import os
 
 import numpy as np
-# import joblib
+import re
 import pandas as pd
+from string import punctuation as punct
 # import numpy as np
 from tensorflow.keras.models import Sequential,load_model
 from tensorflow.keras.layers import TextVectorization, StringLookup, Dense, Dropout
@@ -126,7 +127,7 @@ def char_tokenizer(input_text: str) -> str:
     for i, char in enumerate(cleaned_text):
         
         # Ajoute l'espace avant le caractère si nécessaire
-        if i>0 and ( tokenized_text[-1] in string.punctuation ) or ( char not in string.punctuation ):
+        if i>0 and ( tokenized_text[-1] in punct ) or ( char not in punct ):
             tokenized_text += ' '
             #print(f"{tokenized_text[-1]}+{char}" )
 
