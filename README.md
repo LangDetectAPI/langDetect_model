@@ -13,13 +13,33 @@ Le projet `langDetect shallow model` est une implémentation de détection de la
 
 ## Installation
 
+### Exécution Locale avec un Environnement Virtuel
+Il est recommandé d'utiliser un environnement virtuel Python.
+
+
+
+
 1. **Cloner le dépôt** :
 
    ```
    git clone https://github.com/LangDetectAPI/model_langDetect.git
    ```
+2. **Créer un environnement virtuel** :
 
-2. **Installer les dépendances** :
+   Naviguez jusqu'au répertoire racine de votre projet, puis exécutez la commande suivante pour créer un environnement virtuel :
+
+   ```bash
+   python3 -m venv .venv
+   ```
+
+3. **Activer l'environnement virtuel** :
+
+   Pour activer l'environnement virtuel, exécutez :
+   ```bash
+     .venv\Scripts\activate
+   ```
+
+4. **Installer les dépendances** :
 
    Dans le répertoire du projet, exécutez :
 
